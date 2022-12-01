@@ -1,0 +1,16 @@
+# {{ ansible_managed }}
+[Unit]
+Description={{ item.description }}
+After={{ funkwhale_systemd_after }}
+PartOf={{ funkwhale_systemd_service_name }}.target
+
+[Service]
+Restart=on-failure
+RestartSec=10
+User={{ funkwhale_username }}
+WorkingDirectory={{ funkwhale_install_path }}/api
+EnvironmentFile={{ funkwhale_config_path }}/.env
+ExecStart={{ item.command }}
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,13 @@
+---
+- name: "Install redis"
+  become: true
+  when: funkwhale_redis_managed
+  package:
+    name:
+      - redis-server
+
+- name: "Start redis-server"
+  when: funkwhale_redis_managed
+  service:
+    name: redis-server
+    state: started

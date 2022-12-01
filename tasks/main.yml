@@ -1,0 +1,29 @@
+---
+- name: set a password for postgresql DB (remote psql server only)
+  tags: [db]
+  set_fact:
+    # Look up for the key 'vault_funkwhale_database_password' (for you to create, ideally in a vault).
+    # If no key is found,it will search inside ./pgsql_funkwhale.credentials.txt.
+    # If ./pgsql_funkwhale.credentials.txt does not exist, it  generates a random password and write it there.
+    funkwhale_database_password: "{{ vault_funkwhale_database_password | default(lookup('password', './%s.credentials.txt chars=ascii_letters,digits length=20' % 'pgsql_funkwhale')) }}"
+  # If 'funkwhale_database_local:' == true, funkwhale will connect via unix socket (no password needed).
+  when: not funkwhale_database_local
+
+- name: "Set frontend path"
+  when: funkwhale_frontend_managed
+  tags: [funkwhale, nginx]
+  set_fact:
+    funkwhale_frontend_path: "{{ funkwhale_install_path }}/front/dist"
+
+- include: packages.yml
+  tags: [packages]
+- include: db.yml
+  tags: [db]
+- include: redis.yml
+  tags: [redis]
+- include: funkwhale.yml
+  tags: [funkwhale]
+- include: services.yml
+  tags: [services]
+- include: nginx.yml
+  tags: [nginx]

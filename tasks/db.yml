@@ -1,0 +1,57 @@
+---
+- name: "Install postgresql"
+  become: true
+  when: funkwhale_database_managed and funkwhale_database_local
+  package:
+    name:
+      - postgresql
+      - python3-psycopg2
+
+- name: "Start Postgresql"
+  when: funkwhale_database_managed and funkwhale_database_local
+  service:
+    name: postgresql
+    state: started
+
+- name: "Create {{ funkwhale_database_user }} database user on {{ funkwhale_database_host_ansible or inventory_hostname }} (local / passwordless)"
+  become: true
+  become_user: postgres
+  when: funkwhale_database_managed and funkwhale_database_host_ansible == none
+  postgresql_user:
+    name: "{{ funkwhale_database_user }}"
+    login_user: postgres
+
+- name: "Create {{ funkwhale_database_user }} database user on {{ funkwhale_database_host_ansible }} (remote / with password)"
+  become: true
+  become_user: postgres
+  when: funkwhale_database_managed and funkwhale_database_host_ansible != none
+  postgresql_user:
+    name: "{{ funkwhale_database_user }}"
+    password: "{{ funkwhale_database_password }}"
+    login_user: postgres
+  delegate_to: "{{ funkwhale_database_host_ansible or inventory_hostname }}"
+
+- name: "Create {{ funkwhale_database_name }} database on {{ funkwhale_database_host_ansible or inventory_hostname }}"
+  become: true
+  become_user: postgres
+  when: funkwhale_database_managed
+  postgresql_db:
+    name: "{{ funkwhale_database_name }}"
+    login_user: postgres
+    owner: "{{ funkwhale_database_user }}"
+    encoding: UTF-8
+    template: template0
+  delegate_to: "{{ funkwhale_database_host_ansible or inventory_hostname }}"
+
+- name: set up pgsql extensions
+  become: yes
+  become_user: postgres
+  when: funkwhale_database_managed
+  postgresql_ext:
+    db: "{{ funkwhale_database_name }}"
+    name: "{{ myext }}"
+    login_user: postgres
+  loop: ["unaccent", "citext"]
+  loop_control:
+    loop_var: myext
+  delegate_to: "{{ funkwhale_database_host_ansible or inventory_hostname }}"

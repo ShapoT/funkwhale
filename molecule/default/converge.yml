@@ -1,0 +1,19 @@
+---
+- name: Converge
+  hosts: all
+  roles:
+    # our directory name is not "funkwhale" so molecule can't find the role
+    # https://github.com/ansible/molecule/issues/1567#issuecomment-436876722
+    - role: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') | basename }}"
+      vars:
+        funkwhale_letsencrypt_email: test-certbot@yourdomain.funkwhale
+        funkwhale_letsencrypt_skip_cert: true
+        # funkwhale_letsencrypt_enabled: false
+        funkwhale_ssl_cert_path: /certs/test.crt
+        funkwhale_ssl_key_path: /certs/test.key
+        funkwhale_hostname: yourdomain.funkwhale
+        funkwhale_env_vars:
+          - EMAIL_CONFIG=smtp+tls://user@:password@youremail.host:587
+          - DEFAULT_FROM_EMAIL=noreply@yourdomain.funkwhale
+          - ADDITIONAL_VAR=1
+          - ADDITIONAL_VAR=2

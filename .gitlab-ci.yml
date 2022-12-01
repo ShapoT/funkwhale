@@ -1,0 +1,73 @@
+---
+stages:
+  - test
+  - deploy
+
+variables:
+  LATEST_VERSION_URL: https://docs.funkwhale.audio/latest.txt
+
+pre-commit:
+  stage: test
+  image: python:3.11
+  variables:
+    PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+    PRE_COMMIT_HOME: "$CI_PROJECT_DIR/.cache/pre-commit"
+  cache:
+    paths:
+      - $CI_PROJECT_DIR/.cache/pip
+      - $CI_PROJECT_DIR/.cache/pre-commit
+  before_script:
+    - pip3 install pre-commit
+  script:
+    - pre-commit run --all --color=always --show-diff-on-failure
+
+test-install-script:
+  stage: test
+  image: $TEST_IMAGE
+  parallel:
+    matrix:
+      - TEST_IMAGE: ["debian:10", "ubuntu:focal", "ubuntu:jammy", "debian:11"]
+  interruptible: true
+  before_script:
+    - apt-get update && apt-get install -y curl
+    - |
+      echo "Retrieving latest version from $LATEST_VERSION_URL"
+      funkwhale_version=$(curl -sfL $LATEST_VERSION_URL || true)
+      if [ -z "$funkwhale_version" ]; then
+          echo "Could not retrieve latest version!"
+          exit 1
+      fi
+    - echo "Latest version is $funkwhale_version"
+    - sed -i "0,/funkwhale_version_placeholder/{s/funkwhale_version_placeholder/$funkwhale_version/}" install.sh
+  script:
+    - |
+      set -x
+      export ANSIBLE_FUNKWHALE_ROLE_PATH=$(pwd)
+      printf 'test.deployment\ntest\ncontact@test.deployment\nY\nN\n\n\n\N\n\n\n' | bash install.sh
+  tags:
+    - docker
+pages:
+  stage: deploy
+  image: buildpack-deps
+  script:
+    - |
+      echo "Retrieving latest version from $LATEST_VERSION_URL"
+      funkwhale_version=$(curl -sfL $LATEST_VERSION_URL || true)
+      if [ -z "$funkwhale_version" ]; then
+          echo "Could not retrieve latest version!"
+          exit 1
+      fi
+    - echo "Latest version is $funkwhale_version"
+    - sed -i "0,/funkwhale_version_placeholder/{s/funkwhale_version_placeholder/$funkwhale_version/}" install.sh
+    - mkdir -p public
+    - cp install.sh public/
+    - cp install.sh public/index.html
+    - cp upgrade.sh public/upgrade.sh
+
+  artifacts:
+    paths:
+      - public
+  only:
+    - master@funkwhale/ansible
+  tags:
+    - docker

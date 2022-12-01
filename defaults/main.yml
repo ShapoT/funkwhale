@@ -1,0 +1,58 @@
+---
+# defaults file for funkwhale
+funkwhale_install_path: /srv/funkwhale
+funkwhale_media_path: /srv/funkwhale/data/media
+funkwhale_static_path: /srv/funkwhale/data/static
+funkwhale_music_path: /srv/funkwhale/data/music
+funkwhale_config_path: /srv/funkwhale/config
+funkwhale_external_storage_enabled: false
+funkwhale_disable_django_admin: false
+funkwhale_username: funkwhale
+funkwhale_frontend_managed: true
+
+funkwhale_database_managed: true
+funkwhale_database_local: true
+funkwhale_database_name: funkwhale
+funkwhale_database_user: funkwhale
+# the DB host as per your ansible inventory. No delegation is used if left empty
+funkwhale_database_host_ansible:
+# the DB FQDN or IP for funkwhale connector configuration (ex: pg01.local)
+funkwhale_database_host_app: 2a01:cb05:8fdb:2500:f46f:bbff:fe28:3dfa
+funkwhale_database_port: 5432
+
+# ↓ Only needed if 'funkwhale_database_managed' == false
+# ↓ This is also assuming DB and user have already been set up, outside of the playbook.
+# ↓ Considering the playbook handles both local and remote PostGreSQL server types, this should typically not be required.
+# funkwhale_database_url: postgresql://{{ funkwhale_database_user }}[:{{ funkwhale_database_password }}]@[{{ funkwhale_database_host_app }}]:{{ funkwhale_database_port | default(5432) }}/{{ funkwhale_database_name }}
+
+funkwhale_nginx_managed: true
+# If you have an HTTPS reverse proxy higher up, set this to true
+funkwhale_nginx_tls_termination: true
+funkwhale_nginx_tls_configure_ciphers: true
+funkwhale_nginx_max_body_size: 100M
+funkwhale_nginx_use_compression: true
+funkwhale_nginx_additional_config:
+funkwhale_ssl_cert_path:
+funkwhale_ssl_key_path:
+funkwhale_protocol: https
+
+funkwhale_letsencrypt_certbot_flags:
+funkwhale_letsencrypt_enabled: true
+funkwhale_letsencrypt_skip_cert: false
+
+funkwhale_nginx_csp_policy: "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; object-src 'none'; media-src 'self' data:"
+funkwhale_redis_managed: true
+funkwhale_api_ip: 2a01:cb05:8fdb:2500:f46f:bbff:fe28:3dfa
+funkwhale_api_port: 5000
+funkwhale_web_workers: 1
+funkwhale_gunicorn_extra_args: ""
+funkwhale_settings_module: config.settings.production
+funkwhale_env_vars: []
+funkwhale_systemd_managed: true
+funkwhale_systemd_after: redis.service postgresql.service
+funkwhale_systemd_service_name: funkwhale
+funkwhale_custom_settings:
+funkwhale_custom_pip_packages: []
+funkwhale_install_from_source: false
+funkwhale_source_url: https://dev.funkwhale.audio/funkwhale/funkwhale.git
+funkwhale_node_version: "13"

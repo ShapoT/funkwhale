@@ -1,0 +1,67 @@
+# Molecule managed
+
+{% if item.registry is defined %}
+FROM {{ item.registry.url }}/{{ item.image }}
+{% else %}
+FROM {{ item.image }}
+{% endif %}
+
+RUN if [ $(command -v apt-get) ]; then apt-get update && apt-get install -y python3 python3-setuptools sudo bash ca-certificates && apt-get clean; \
+    elif [ $(command -v dnf) ]; then dnf makecache && dnf --assumeyes install python sudo python-devel python*-dnf bash && dnf clean all; \
+    elif [ $(command -v yum) ]; then yum makecache fast && yum install -y python sudo yum-plugin-ovl bash && sed -i 's/plugins=0/plugins=1/g' /etc/yum.conf && yum clean all; \
+    elif [ $(command -v zypper) ]; then zypper refresh && zypper install -y python sudo bash python-xml && zypper clean -a; \
+    elif [ $(command -v apk) ]; then apk update && apk add --no-cache python sudo bash ca-certificates; \
+    elif [ $(command -v xbps-install) ]; then xbps-install -Syu && xbps-install -y python sudo bash ca-certificates && xbps-remove -O; fi
+
+# Adding test SSL certs
+RUN mkdir /certs && \
+echo '-----BEGIN CERTIFICATE-----\n\
+MIIDqTCCApGgAwIBAgIUBGy73NTCABwZpYk9Xj7O5QlSUd4wDQYJKoZIhvcNAQEL\n\
+BQAwZDELMAkGA1UEBhMCQVUxEzARBgNVBAgMClNvbWUtU3RhdGUxITAfBgNVBAoM\n\
+GEludGVybmV0IFdpZGdpdHMgUHR5IEx0ZDEdMBsGA1UEAwwUZnVua3doYWxlLnlv\n\
+dXJkb21haW4wHhcNMTkwNTEzMDg0MzM2WhcNMjkwNTEwMDg0MzM2WjBkMQswCQYD\n\
+VQQGEwJBVTETMBEGA1UECAwKU29tZS1TdGF0ZTEhMB8GA1UECgwYSW50ZXJuZXQg\n\
+V2lkZ2l0cyBQdHkgTHRkMR0wGwYDVQQDDBRmdW5rd2hhbGUueW91cmRvbWFpbjCC\n\
+ASIwDQYJKoZIhvcNAQEBBQADggEPADCCAQoCggEBAO7ZdBvEQlUJN5IiKLlxYd9J\n\
+ccx74oH2fsLHpESP/uWgvALXxu9XcbtaGAyIIiw5BDoNfew7SKLxx/G5I3Uqs6aI\n\
+mPhEiVDW7V8Z3slxQcGY7I5c0RkrlIvcX4pnUfqPHfANQH1rLs6emq2P7MsrQe+P\n\
+iIsvJk0BFY+ID4KlxnZzBvuu6gjSucLFtY2/OPV7Rxo9fwflknmGb9GNjWBnlT9e\n\
+OQUJRYVGY56m5XU+1C1XRPYFhtBKf0fiO/Hu2MuLKRgY+H7c33BltvOatUo74UzV\n\
+ud5X9z75a0Nvivv7elXtR5ThYHfEHODpRm6oLWLc5RUtq3qw7t/PCiEzpySpticC\n\
+AwEAAaNTMFEwHQYDVR0OBBYEFPVrtpu6+yY94B6ZQqbu4nQNeH1MMB8GA1UdIwQY\n\
+MBaAFPVrtpu6+yY94B6ZQqbu4nQNeH1MMA8GA1UdEwEB/wQFMAMBAf8wDQYJKoZI\n\
+hvcNAQELBQADggEBALmL+8SAPkelsSPLocbjT1I3BQPpBARDds7JA8I+sWW8eRg4\n\
+jYJ0tXdKhJoaLoURrqGXT42CPO61shESKVTgmF84S+IXfVHaKySRQ2XbGAC0c2+W\n\
+c3nVH3QYEpGR0uINPNpzS/TB0Xiw5vTLu9i8KppgynFa8GzPVFL5U6Cjk/7sbpP+\n\
+8EMF1+fj1ol4Unr7NswK4qgZ/e7gvUghCwWUMlbWfn8YAW/Rz8cfofiYBpTLiOmn\n\
+3ZnvZpNVSUy7LIBf9hJrnpYZ62YLa3W2mBxvNNDlpt5OuqBn9xJpmzjdwnL5hake\n\
+/ofctTHKVVBLDrteZaR3zFJtcnMJBgxrHAnKDxY=\n\
+-----END CERTIFICATE-----' > /certs/test.crt && \
+    echo '-----BEGIN PRIVATE KEY-----\n\
+MIIEvwIBADANBgkqhkiG9w0BAQEFAASCBKkwggSlAgEAAoIBAQDu2XQbxEJVCTeS\n\
+Iii5cWHfSXHMe+KB9n7Cx6REj/7loLwC18bvV3G7WhgMiCIsOQQ6DX3sO0ii8cfx\n\
+uSN1KrOmiJj4RIlQ1u1fGd7JcUHBmOyOXNEZK5SL3F+KZ1H6jx3wDUB9ay7Onpqt\n\
+j+zLK0Hvj4iLLyZNARWPiA+CpcZ2cwb7ruoI0rnCxbWNvzj1e0caPX8H5ZJ5hm/R\n\
+jY1gZ5U/XjkFCUWFRmOepuV1PtQtV0T2BYbQSn9H4jvx7tjLiykYGPh+3N9wZbbz\n\
+mrVKO+FM1bneV/c++WtDb4r7+3pV7UeU4WB3xBzg6UZuqC1i3OUVLat6sO7fzwoh\n\
+M6ckqbYnAgMBAAECggEBAOcJHr+xEryworlPI3dljldu8o3qk4pFBg6hEGtlohk6\n\
+ZkKVuA9R1Wh1WGfe0rdWG5mP7WsxWSyMlWxjOkIeoRIIdXdIzE6O56MjIhZW4FVE\n\
++CUo8PXY6uJys1PsZybngvztxKDMqcUhM9uJKXLJEAmLHHgNjo3T66gf42jrs9Jj\n\
+yRFtX7P2+WkGtiELiHavnwebFu7QalsbVnIM2IpkqM3EeCkN2Mesg8UjbGAaC04d\n\
+QQrgzwllRfGGz00bcW7+UM9Qvuo4ySycagkJsjUwg27Fa2bYn0nwKckmoZdqtFZi\n\
+T5MNF17/69x3KtfP4B/z/DmpIpFl3sx3DTNJZGdunykCgYEA/z67wEaLTE6eaYS6\n\
+ZMpeUgv/55sdfnbGwxJPBum28Pd9re+7wmaUHVqant9bskTKjFUTpzSkG4FMbhW4\n\
+QzoyS9xb946dZ86xIpcHdWjMRz1H+WoHyFQMc3FJL3k5bu5O0bhGlkBv9Lw6sB58\n\
+mM4TQhvCYTo4gu/CdwbipcAnBpsCgYEA745OQjKETa0kOi7Rl8IynaVL+lCyo11A\n\
+mGaIoTVVVb8HtghPwQ2gE3tGZJNqApMXy61EKpL+oBB3hYjaAxjJ6L1uHEk1d4Vh\n\
+5ZHtH/2YnL20vrJVVenNGlnkP1sFGPT6Ik/WwtFNzhyiLy3Yh2m6D2dzAJU/q6w/\n\
+JME+yjfQgWUCgYEA3HQ2fU9wqKuOrtxwkPUomfy7PjL/OmckLP/3OaVK2L0p070n\n\
+kjQ+4UuMGIQaEtLPjn08yEHzK751YO9pgscVAeiFlj+bPDmNTK7dRk8JgM4xB/7I\n\
+UgIl7t99sn8lV+aENSbP8J4fFGYu2ka6ns/+Wi7XqFo8zPqAH4XW5AoeqtkCgYEA\n\
+g6ueTDhkDCXcwbY2Mcnl9EyExGNSrQR2ms3Qz3r3GphTbrSG0b/hepPJj0KPhDbB\n\
+X4wu6Y++MNCcQWOFISqg4DIusZFzt+wycPKSeYD0P0Luc9qlmQFXYOKD2Gb5GEye\n\
+p/lmO9K7h0ypwHDckSGFyS29QlbGll+onVUyZAflrRkCgYBJtGOKfwZ8Ws82qzYC\n\
+un5cpBQknAOOZaGsPY7BbtIK0/zG66mearYOeo9TxJZgL+hDCL8is7qcGXRGcA5J\n\
+5RdqyJ6Ex1hXyc1cnIXXOrSDFVobA2/QMiAZ2kDSW/DkRHwJNDWVtwnG3HG4vEqb\n\
+FE/Prv7XTK6n66CPuThoeox2iQ==\n\
+-----END PRIVATE KEY-----\n' > /certs/test.key

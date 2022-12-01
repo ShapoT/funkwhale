@@ -1,0 +1,150 @@
+# {{ ansible_managed }}
+{% if funkwhale_nginx_tls_termination -%}
+server {
+    listen 80;
+    listen [::]:80;
+    server_name {{ funkwhale_hostname }};
+    location / { return 301 https://$host$request_uri; }
+}
+{% endif -%}
+
+server {
+    listen {% if funkwhale_nginx_tls_termination %}443 ssl http2{% else %}80{% endif %};
+    listen [::]:{% if funkwhale_nginx_tls_termination %}443 ssl http2{% else -%}80{% endif %};
+    server_name {{ funkwhale_hostname }};
+    {% if funkwhale_nginx_tls_termination -%}
+    {% if funkwhale_ssl_key_path -%}
+    ssl_certificate {{ funkwhale_ssl_cert_path }};
+    ssl_certificate_key {{ funkwhale_ssl_key_path }};
+    {% else -%}
+    ssl_certificate /etc/letsencrypt/live/{{ funkwhale_hostname }}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/{{ funkwhale_hostname }}/privkey.pem;
+    {% endif -%}
+    {% if funkwhale_nginx_tls_configure_ciphers -%}
+    # from https://cipherli.st/
+    ssl_prefer_server_ciphers on;
+    ssl_ciphers EECDH+AESGCM:EDH+AESGCM;
+    ssl_ecdh_curve secp384r1;
+    ssl_session_timeout  10m;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_tickets off;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    {% endif -%}
+    add_header Strict-Transport-Security "max-age=63072000; preload";
+    {% endif -%}
+
+    {% if funkwhale_nginx_csp_policy -%}
+    # Security-related headers
+    add_header Content-Security-Policy "{{ funkwhale_nginx_csp_policy }}";
+    {% endif -%}
+
+    root {{ funkwhale_frontend_path }};
+
+    # compression settings
+    {% if funkwhale_nginx_use_compression -%}
+    gzip on;
+    gzip_comp_level    5;
+    gzip_min_length    256;
+    gzip_proxied       any;
+    gzip_vary          on;
+
+    gzip_types
+        application/javascript
+        application/vnd.geo+json
+        application/vnd.ms-fontobject
+        application/x-font-ttf
+        application/x-web-app-manifest+json
+        font/opentype
+        image/bmp
+        image/svg+xml
+        image/x-icon
+        text/cache-manifest
+        text/css
+        text/plain
+        text/vcard
+        text/vnd.rim.location.xloc
+        text/vtt
+        text/x-component
+        text/x-cross-domain-policy;
+    {% else -%}
+    gzip off;
+    {% endif -%}
+    # end of compression settings
+
+    location / {
+        include /etc/nginx/funkwhale_proxy.conf;
+        # this is needed if you have file import via upload enabled
+        client_max_body_size {{ funkwhale_nginx_max_body_size }};
+        proxy_pass   http://{{ funkwhale_api_ip }}:{{ funkwhale_api_port }}/;
+    }
+
+    location /front/ {
+        alias {{ funkwhale_frontend_path }}/;
+        expires 30d;
+        add_header Pragma public;
+        add_header Cache-Control "public, must-revalidate, proxy-revalidate";
+        add_header Service-Worker-Allowed "/";
+    }
+
+    location /federation/ {
+        include /etc/nginx/funkwhale_proxy.conf;
+        proxy_pass   http://{{ funkwhale_api_ip }}:{{ funkwhale_api_port }}/federation/;
+    }
+
+    # You can comment this if you do not plan to use the Subsonic API
+    location /rest/ {
+        include /etc/nginx/funkwhale_proxy.conf;
+        proxy_pass   http://{{ funkwhale_api_ip }}:{{ funkwhale_api_port }}/api/subsonic/rest/;
+    }
+
+    location /.well-known/ {
+        include /etc/nginx/funkwhale_proxy.conf;
+        proxy_pass   http://{{ funkwhale_api_ip }}:{{ funkwhale_api_port }}/.well-known/;
+    }
+
+    location /media/ {
+        alias {{ funkwhale_media_path }}/;
+    }
+
+    {% if funkwhale_external_storage_enabled -%}
+    # Comment the previous location and uncomment this one if you're storing
+    # media files in a S3 bucket
+    location ~ /_protected/media/(.+) {
+        # Needed to ensure DSub auth isn't forwarded to S3/Minio, see #932
+        proxy_set_header Authorization "";
+        internal;
+        proxy_pass $1;
+    }
+    {% else -%}
+    location /_protected/media {
+        # this is an internal location that is used to serve
+        # audio files once correct permission / authentication
+        # has been checked on API side
+        internal;
+        alias   {{ funkwhale_media_path }};
+    }
+    {% endif %}
+
+    location /_protected/music {
+        # this is an internal location that is used to serve
+        # audio files once correct permission / authentication
+        # has been checked on API side
+        # Set this to the same value as your MUSIC_DIRECTORY_PATH setting
+        internal;
+        alias   {{ funkwhale_music_path }};
+    }
+
+    location /staticfiles/ {
+        # django static files
+        alias {{ funkwhale_static_path }}/;
+    }
+{% if funkwhale_disable_django_admin -%}
+
+    location /api/admin/ {
+        # disable access to API admin dashboard
+        return 403;
+    }
+{% endif -%}
+{{ funkwhale_nginx_additional_config }}
+}

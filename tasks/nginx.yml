@@ -1,0 +1,81 @@
+---
+- name: "Install nginx"
+  become: true
+  when: funkwhale_nginx_managed
+  package:
+    name:
+      - nginx
+
+- name: "Start Nginx"
+  become: true
+  when: funkwhale_nginx_managed
+  service:
+    name: nginx
+    state: started
+
+# from https://gist.github.com/mattiaslundberg/ba214a35060d3c8603e9b1ec8627d349
+
+- name: Install snapd
+  when: funkwhale_nginx_managed and funkwhale_letsencrypt_enabled
+  become: true
+  package:
+    name: snapd
+    state: present
+
+- name: Prepare snapd for certbot installation
+  when: funkwhale_nginx_managed and funkwhale_letsencrypt_enabled
+  become: true
+  command: snap install core
+
+- name: Refresh core snap before installing certbot
+  when: funkwhale_nginx_managed and funkwhale_letsencrypt_enabled
+  become: true
+  command: snap refresh core
+
+- name: Install certbot snap
+  when: funkwhale_nginx_managed and funkwhale_letsencrypt_enabled
+  become: true
+  command: snap install --classic certbot
+
+- name: Link certbot snap installation
+  when: funkwhale_nginx_managed and funkwhale_letsencrypt_enabled
+  become: true
+  file:
+    src: /snap/bin/certbot
+    dest: /usr/bin/certbot
+    state: link
+
+- name: Create letsencrypt certificate
+  when: funkwhale_nginx_managed and funkwhale_letsencrypt_enabled and not funkwhale_letsencrypt_skip_cert
+  become: true
+  command: certbot -v -n certonly --nginx -m {{ funkwhale_letsencrypt_email }} --agree-tos -d {{ funkwhale_hostname }} {{ funkwhale_letsencrypt_certbot_flags }}
+  args:
+    creates: /etc/letsencrypt/live/{{ funkwhale_hostname }}
+
+- name: Add letsencrypt cronjob for cert renewal
+  when: funkwhale_nginx_managed and funkwhale_letsencrypt_enabled and not funkwhale_letsencrypt_skip_cert
+  become: true
+  cron:
+    name: funkwhale_letsencrypt_renewal
+    special_time: weekly
+    job: /usr/bin/certbot -v -n certonly --nginx -m {{ funkwhale_letsencrypt_email }} --agree-tos -d {{ funkwhale_hostname }} {{ funkwhale_letsencrypt_certbot_flags }}
+
+- name: "Create funkwhale proxy file"
+  when: funkwhale_nginx_managed
+  become: true
+  template:
+    src: funkwhale_proxy.conf.j2
+    dest: "/etc/nginx/funkwhale_proxy.conf"
+    mode: "644"
+  notify:
+    - reload nginx
+
+- name: "Create funkwhale vhost file"
+  when: funkwhale_nginx_managed
+  become: true
+  template:
+    src: nginx.conf.j2
+    dest: "/etc/nginx/sites-enabled/{{ funkwhale_hostname }}.conf"
+    mode: "644"
+  notify:
+    - reload nginx

@@ -1,0 +1,21 @@
+---
+- name: restart funkwhale
+  become: true
+  when: funkwhale_systemd_managed
+  service:
+    name: "{{ funkwhale_systemd_service_name }}.target"
+    state: restarted
+
+- name: reload funkwhale
+  become: true
+  when: funkwhale_systemd_managed
+  shell: |
+    systemctl kill -s HUP {{ funkwhale_systemd_service_name }}-server
+    systemctl kill -s HUP {{ funkwhale_systemd_service_name }}-worker
+    systemctl restart {{ funkwhale_systemd_service_name }}-beat
+
+- name: reload nginx
+  become: true
+  service:
+    name: nginx
+    state: reloaded

@@ -1,0 +1,262 @@
+---
+- name: Check latest version
+  when: funkwhale_version is not defined or funkwhale_version == "latest"
+  uri:
+    url: https://docs.funkwhale.audio/latest.txt
+    return_content: yes
+  register: latest_version
+
+- name: Set version to install
+  set_fact:
+    funkwhale_install_version: "{{ latest_version.get('content', funkwhale_version) | trim }}"
+
+- name: Ensure home folder can be created
+  become: true
+  file:
+    path: "{{ funkwhale_install_path | dirname }}"
+    state: directory
+
+- name: "Create funkwhale user"
+  become: true
+  user:
+    name: "{{ funkwhale_username }}"
+    shell: /bin/false
+    home: "{{ funkwhale_install_path }}"
+
+- name: "Create funkwhale directories"
+  become: true
+  file:
+    path: "{{ item }}"
+    owner: "{{ funkwhale_username }}"
+    group: "{{ funkwhale_username }}"
+    state: directory
+    mode: "755"
+  with_items:
+    - "{{ funkwhale_install_path }}"
+    - "{{ funkwhale_media_path }}"
+    - "{{ funkwhale_static_path }}"
+    - "{{ funkwhale_music_path }}"
+    - "{{ funkwhale_config_path }}"
+
+- name: Check if django_secret_key file is set up
+  stat:
+    path: "{{ funkwhale_config_path }}/django_secret_key"
+  register: "result_django_secret_key"
+
+- name: "Generate a random secret key"
+  when: not result_django_secret_key.stat.exists
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  command: "openssl rand -hex 25"
+  register: result_secret_key_generation
+
+- name: "Create django_secret_key file"
+  when: not ansible_check_mode and not result_django_secret_key.stat.exists
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  copy:
+    content: "{{ result_secret_key_generation.stdout }}"
+    dest: "{{ funkwhale_config_path }}/django_secret_key"
+    mode: "600"
+
+- name: "Setup a dummy secret key"
+  when: ansible_check_mode
+  set_fact:
+    django_secret_key: "dummy_secret_key_for_check_mode"
+
+- name: "Retrieve secret key from {{ funkwhale_config_path }}/django_secret_key"
+  when: not ansible_check_mode
+  slurp:
+    src: "{{ funkwhale_config_path }}/django_secret_key"
+  register: secret_key
+
+- name: "Register secret key"
+  when: not ansible_check_mode
+  set_fact:
+    django_secret_key: "{{ secret_key['content'] | b64decode }}"
+
+- name: "Create funkwhale configuration file"
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  template:
+    src: env.j2
+    dest: "{{ funkwhale_config_path }}/.env"
+    owner: "{{ funkwhale_username }}"
+    mode: 0600
+  notify:
+    - restart funkwhale
+
+- name: Download front-end files
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  when: funkwhale_frontend_managed and not funkwhale_install_from_source
+  unarchive:
+    src: https://dev.funkwhale.audio/funkwhale/funkwhale/builds/artifacts/{{ funkwhale_install_version }}/download?job=build_front
+    dest: "{{ funkwhale_install_path }}"
+    remote_src: true
+  notify:
+    - reload funkwhale
+
+- name: Download api files
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  when: not funkwhale_install_from_source
+  unarchive:
+    src: https://dev.funkwhale.audio/funkwhale/funkwhale/builds/artifacts/{{ funkwhale_install_version }}/download?job=build_api
+    dest: "{{ funkwhale_install_path }}"
+    remote_src: true
+  notify:
+    - reload funkwhale
+
+# Install from source
+- name: "Download Funkwhale source"
+  when: funkwhale_install_from_source
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  git:
+    repo: "{{ funkwhale_source_url }}"
+    dest: "{{ funkwhale_install_path }}/src"
+    version: "{{ funkwhale_install_version }}"
+    force: true
+  notify:
+    - reload funkwhale
+
+- name: Create /front symlink to source
+  when: funkwhale_frontend_managed and funkwhale_install_from_source
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  file:
+    src: "{{ funkwhale_install_path }}/src/front"
+    dest: "{{ funkwhale_install_path }}/front"
+    state: link
+
+- name: Create /api symlink to source
+  when: funkwhale_install_from_source
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  file:
+    src: "{{ funkwhale_install_path }}/src/api"
+    dest: "{{ funkwhale_install_path }}/api"
+    state: link
+
+- name: Create /config symlink in source
+  when: funkwhale_install_from_source
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  file:
+    src: "{{ funkwhale_config_path }}"
+    dest: "{{ funkwhale_install_path }}/src/config"
+    state: link
+
+- name: "Add frontend apt repositories GPG key"
+  become: true
+  when: funkwhale_frontend_managed and funkwhale_install_from_source
+  apt_key:
+    url: "{{ item }}"
+    state: present
+  with_items:
+    - https://dl.yarnpkg.com/debian/pubkey.gpg
+    - https://deb.nodesource.com/gpgkey/nodesource.gpg.key
+
+- name: "Install frontend apt repositories"
+  become: true
+  when: funkwhale_frontend_managed and funkwhale_install_from_source
+  apt_repository:
+    repo: deb https://dl.yarnpkg.com/debian/ stable main
+    state: present
+  with_items:
+    - "deb https://dl.yarnpkg.com/debian/ stable main"
+    - "deb https://deb.nodesource.com/node_{{ funkwhale_node_version }}.x {{ ansible_distribution_release }} main"
+
+- name: "Install frontend dependencies"
+  become: true
+  when: funkwhale_frontend_managed and funkwhale_install_from_source
+  package:
+    name:
+      - nodejs
+      - yarn
+      - gettext
+      - jq
+
+- name: "Install frontend javascript dependencies"
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  when: funkwhale_frontend_managed and funkwhale_install_from_source
+  yarn:
+    path: "{{ funkwhale_install_path }}/src/front"
+
+- name: "Build front-end"
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  when: funkwhale_frontend_managed and funkwhale_install_from_source
+  command: "yarn build"
+  args:
+    chdir: "{{ funkwhale_install_path }}/src/front"
+  notify:
+    - reload funkwhale
+
+# end of from source related stuff
+
+- name: "Setup virtualenv"
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  pip:
+    name: wheel
+    virtualenv: "{{ funkwhale_install_path }}/virtualenv"
+    virtualenv_python: python3
+
+- name: "Install python dependencies"
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  pip:
+    requirements: "{{ funkwhale_install_path }}/api/requirements.txt"
+    virtualenv: "{{ funkwhale_install_path }}/virtualenv"
+    virtualenv_python: python3
+  notify:
+    - reload funkwhale
+
+- name: "Install custom python dependencies, if any"
+  when: funkwhale_custom_pip_packages is defined and (funkwhale_custom_pip_packages|length>0)
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  pip:
+    name: "{{ funkwhale_custom_pip_packages }}"
+    virtualenv: "{{ funkwhale_install_path }}/virtualenv"
+    virtualenv_python: python3
+  notify:
+    - reload funkwhale
+
+- name: "Install gunicorn/uvicorn"
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  pip:
+    name:
+      - gunicorn
+      - uvicorn[standard]
+    virtualenv: "{{ funkwhale_install_path }}/virtualenv"
+    virtualenv_python: python3
+  notify:
+    - restart funkwhale
+
+- name: Append custom settings to production.py, if any
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  when: "funkwhale_custom_settings != none"
+  blockinfile:
+    path: "{{ funkwhale_install_path }}/api/config/settings/production.py"
+    insertafter: "EOF"
+    block: "{{ funkwhale_custom_settings }}"
+
+- name: "Collect static files"
+  command: "{{ funkwhale_install_path }}/virtualenv/bin/python api/manage.py collectstatic --no-input"
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  args:
+    chdir: "{{ funkwhale_install_path }}"
+
+- name: "Apply database migrations"
+  become: true
+  become_user: "{{ funkwhale_username }}"
+  command: "{{ funkwhale_install_path }}/virtualenv/bin/python api/manage.py migrate --no-input"
+  args:
+    chdir: "{{ funkwhale_install_path }}"
